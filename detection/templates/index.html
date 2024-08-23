@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Object Detection with Pagination and Info Table</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            width: 60%;
+            margin: 0 auto;
+            text-align: center;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+        }
+        #result-image {
+            margin-top: 20px;
+        }
+        .image-list {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        .image-list img {
+            margin: 10px;
+            width: 150px;
+            cursor: pointer;
+        }
+        .pagination {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .pagination button {
+            margin: 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        table {
+            margin: 20px auto;
+            border-collapse: collapse;
+            width: 80%;
+        }
+        table, th, td {
+            border: 1px solid black;
+        }
+        th, td {
+            padding: 8px;
+            text-align: center;
+        }
+        .toggle-mask-btn {
+            color: black;             /* Warna teks putih */
+            border: none;             /* Tanpa border */
+
+            text-align: center;       /* Teks di tengah */
+            text-decoration: none;    /* Tanpa garis bawah */
+            display: inline-block;    /* Tampil secara inline */
+            font-size: 16px;          /* Ukuran font */
+            margin: 4px 2px;          /* Margin tombol */
+            cursor: pointer;          /* Tanda pointer saat hover */
+            border-radius: 12px;      /* Sudut melengkung */
+            text-decoration: underline;
+        }
+    
+        /* Tambahkan efek saat hover pada tombol */
+        .toggle-mask-btn:hover {
+            background-color: #45a049; /* Warna berubah saat hover */
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Object Detection with Mask R-CNN</h1>
+        <form id="upload-form" enctype="multipart/form-data">
+            <input type="file" name="image" accept="image/*" id="image-input" required>
+            <button type="submit">Detect Objects</button>
+        </form>
+
+        <div id="result">
+            <h3>Detection Result:</h3>
+            <img id="result-image" src="" alt="Detected Image">
+        </div>
+
+        <div id="image-list-container">
+            <h3>Previously Detected Images:</h3>
+            <div class="image-list" id="image-list">
+                <!-- Images from database will be inserted here -->
+            </div>
+            <div class="pagination" id="pagination">
+                <!-- Pagination controls will be inserted here -->
+            </div>
+        </div>
+
+        <div id="detection-info">
+            <h3>Detection Information:</h3>
+            <table id="info-table">
+                <thead>
+                    <tr>
+                        <th>Class Name</th>
+                        <th>Bounding Box (x, y, width, height)</th>
+                        <th>Mask Coordinates</th>
+                        <th>Score</th>
+                        <th>
+                            <input type="checkbox" id="show-bbox-checkbox" onchange="toggleBoundingBoxVisibility(this)">
+                            Only Show Bounding Box
+                        </th>
+                        <th>
+                            <input type="checkbox" id="show-mask-checkbox" onchange="toggleBoundingBoxVisibility(this)">
+                            Only Masks
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Detection info will be inserted here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const imagesPerPage = 6;  // Number of images per page
+        let currentPage = 1;
+        let allImages = [];  // To store all images from the server
+        let selectedIds = []; // To store selected IDs for fetching images
+    
+        document.getElementById('upload-form').addEventListener('submit', function (e) {
+            e.preventDefault(); // Prevent the default form submission
+    
+            const formData = new FormData();
+            const imageInput = document.getElementById('image-input');
+    
+            // Append the selected image to the form data
+            formData.append('image', imageInput.files[0]);
+    
+            // Send the image to the API using fetch
+            fetch('/detect/', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.id_predictions) {
+                    // Fetch the image with annotations from the API
+                    fetch(`/image-with-annotations/?id_predictions=${data.id_predictions}&include_all=true`)
+                    .then(response => response.blob())
+                    .then(blob => {
+                        const imageUrl = URL.createObjectURL(blob);
+                        document.getElementById('result-image').src = imageUrl;
+                        loadImageList();  // Reload images after new detection
+                    })
+                    .catch(error => console.error('Error fetching annotated image:', error));
+                } else {
+                    console.error('Error:', data);
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        });
+    
+        // Function to load images from the database and display them
+        function loadImageList() {
+            fetch('/images-list/')  // Endpoint to retrieve image list
+            .then(response => response.json())
+            .then(data => {
+                // Reset all images array and page
+                allImages = [];
+                currentPage = 1;
+    
+                const uniqueImages = new Set();
+    
+                // Filter for unique images and store them in the allImages array
+                data.forEach(imageData => {
+                    if (!uniqueImages.has(imageData.image_base64)) {
+                        uniqueImages.add(imageData.image_base64);
+                        allImages.push(imageData);  // Add to the image list
+                    }
+                });
+    
+                // Display the first page of images
+                displayPage(currentPage);
+            })
+            .catch(error => console.error('Error loading image list:', error));
+        }
+    
+        // Function to display images for the current page
+        function displayPage(page) {
+            const imageListContainer = document.getElementById('image-list');
+            imageListContainer.innerHTML = '';  // Clear previous images
+        
+            const startIndex = (page - 1) * imagesPerPage;
+            const endIndex = page * imagesPerPage;
+            const paginatedImages = allImages.slice(startIndex, endIndex);
+        
+            paginatedImages.forEach(imageData => {
+                const imgElement = document.createElement('img');
+                imgElement.src = `data:image/jpeg;base64,${imageData.image_base64}`;
+                imgElement.alt = "Detected Image";
+                imgElement.addEventListener('click', function () {
+                    // Fetch and display the image with annotations and detection info
+                    fetch(`/image-with-annotations/?id_predictions=${imageData.id_predictions}&include_all=true`)
+                    .then(response => response.blob())
+                    .then(blob => {
+                        const imageBlobUrl = URL.createObjectURL(blob);
+                        document.getElementById('result-image').src = imageBlobUrl;
+        
+                        fetch(`/detection-detail/?id_predictions=${imageData.id_predictions}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            // Ensure data exists
+                            if (data) {
+                                // Clear and populate the detection info table
+                                const infoTableBody = document.querySelector('#info-table tbody');
+                                infoTableBody.innerHTML = '';  // Clear previous data
+        
+                                data.forEach(info => {
+                                    const row = document.createElement('tr');
+                                    
+                                    // Class Name Cell
+                                    const classNameCell = document.createElement('td');
+                                    classNameCell.textContent = info.class_name || 'N/A';
+                                    
+                                    // Bounding Box Cell
+                                    const bboxCell = document.createElement('td');
+                                    bboxCell.textContent = info.bounding_box ? 
+                                        `${info.bounding_box.x}, ${info.bounding_box.y}, ${info.bounding_box.width}, ${info.bounding_box.height}` 
+                                        : 'N/A';
+                                    
+                                    // Mask Coordinates Cell
+                                    const maskCoordsCell = document.createElement('td');
+                                    maskCoordsCell.className = 'mask-coordinates';
+                                    if (Array.isArray(info.mask_coordinates) && info.mask_coordinates.length > 0) {
+                                        const formattedCoords = info.mask_coordinates.map(polygon => 
+                                            polygon.map(point => `(${point.x}, ${point.y})`).join(', ')
+                                        ).join(' | ');
+        
+                                        maskCoordsCell.innerHTML = `<span class="mask-coords-partial">${formatPartialCoords(info.mask_coordinates)}</span>
+                                        <span class="mask-coords-full" style="display: none;">${formattedCoords}</span>
+                                        <button class="toggle-mask-btn">Show</button>`;
+        
+                                        maskCoordsCell.querySelector('.toggle-mask-btn').addEventListener('click', function () {
+                                            const fullCoords = maskCoordsCell.querySelector('.mask-coords-full');
+                                            const partialCoords = maskCoordsCell.querySelector('.mask-coords-partial');
+                                            const btn = maskCoordsCell.querySelector('.toggle-mask-btn');
+        
+                                            if (partialCoords.style.display === 'none') {
+                                                partialCoords.style.display = 'inline';
+                                                fullCoords.style.display = 'none';
+                                                btn.textContent = 'Show';
+                                            } else {
+                                                partialCoords.style.display = 'none';
+                                                fullCoords.style.display = 'inline';
+                                                btn.textContent = 'Hide';
+                                            }
+                                        });
+        
+                                    } else {
+                                        maskCoordsCell.textContent = 'N/A';
+                                    }
+        
+                                    // Score Cell
+                                    const scoreCell = document.createElement('td');
+                                    scoreCell.textContent = info.score !== undefined ? info.score : 'N/A';
+        
+                                    // "Only Show Bounding Box" Checkbox
+                                    const bboxCheckboxCell = document.createElement('td');
+                                    const bboxCheckbox = document.createElement('input');
+                                    bboxCheckbox.type = 'checkbox';
+                                    bboxCheckbox.dataset.id = info.id;
+                                    bboxCheckbox.classList.add('bounding-box-checkbox');
+                                    bboxCheckboxCell.appendChild(bboxCheckbox);
+        
+                                    // "Only Masks" Checkbox
+                                    const maskCheckboxCell = document.createElement('td');
+                                    const maskCheckbox = document.createElement('input');
+                                    maskCheckbox.type = 'checkbox';
+                                    maskCheckbox.dataset.id = info.id;
+                                    maskCheckbox.classList.add('mask-checkbox');
+                                    maskCheckboxCell.appendChild(maskCheckbox);
+        
+                                    row.appendChild(classNameCell);
+                                    row.appendChild(bboxCell);
+                                    row.appendChild(maskCoordsCell);
+                                    row.appendChild(scoreCell);
+                                    row.appendChild(bboxCheckboxCell);
+                                    row.appendChild(maskCheckboxCell);
+                                    infoTableBody.appendChild(row);
+                                });
+        
+                                // Add event listener for checkboxes
+                                document.querySelectorAll('#info-table input[type="checkbox"]').forEach(checkbox => {
+                                    checkbox.addEventListener('change', function() {
+                                        // Handle checkbox changes
+                                        updateSelectedIds();
+                                        displaySelectedImages();
+                                    });
+                                });
+                            } else {
+                                console.error("Incomplete data received:", data);
+                            }
+                        })
+                        .catch(error => console.error('Error fetching detection info:', error));
+                    })
+                    .catch(error => console.error('Error fetching annotated image:', error));
+                });
+        
+                imageListContainer.appendChild(imgElement);
+            });
+        
+            displayPaginationControls();
+        }
+        
+    
+        // Function to format mask coordinates partially
+        function formatPartialCoords(maskCoordinates) {
+            return maskCoordinates.map(polygon => 
+                polygon.slice(0, 5).map(point => `(${point.x}, ${point.y})`).join(', ') + (polygon.length > 5 ? ' ...' : '')
+            ).join(' | '); // Show first 5 coordinates, add '...' if more
+        }
+    
+        // Function to display pagination controls
+        function displayPaginationControls() {
+            const paginationContainer = document.getElementById('pagination');
+            paginationContainer.innerHTML = '';  // Clear previous controls
+    
+            const totalPages = Math.ceil(allImages.length / imagesPerPage);
+    
+            // Create previous button
+            const prevButton = document.createElement('button');
+            prevButton.textContent = 'Previous';
+            prevButton.disabled = currentPage === 1;  // Disable if on the first page
+            prevButton.addEventListener('click', function () {
+                if (currentPage > 1) {
+                    currentPage--;
+                    displayPage(currentPage);
+                }
+            });
+            paginationContainer.appendChild(prevButton);
+    
+            // Create next button
+            const nextButton = document.createElement('button');
+            nextButton.textContent = 'Next';
+            nextButton.disabled = currentPage === totalPages;  // Disable if on the last page
+            nextButton.addEventListener('click', function () {
+                if (currentPage < totalPages) {
+                    currentPage++;
+                    displayPage(currentPage);
+                }
+            });
+            paginationContainer.appendChild(nextButton);
+        }
+    
+        // Function to update selected IDs based on checked checkboxes
+        function updateSelectedIds() {
+            const selectedBoundingBoxIds = Array.from(document.querySelectorAll('#info-table input.bounding-box-checkbox:checked'))
+                                                .map(checkbox => checkbox.dataset.id)
+                                                .filter(id => id);  // Filter out any empty or falsy values
+
+            const selectedMaskIds = Array.from(document.querySelectorAll('#info-table input.mask-checkbox:checked'))
+                                        .map(checkbox => checkbox.dataset.id)
+                                        .filter(id => id);  // Filter out any empty or falsy values
+
+            // Combine bounding box IDs and mask IDs into an object
+            selectedIds = {
+                boundingBoxIds: selectedBoundingBoxIds,
+                maskIds: selectedMaskIds
+            };
+        }
+        
+        function updateCheckboxStates() {
+            const bboxChecked = document.getElementById('show-bbox-checkbox').checked;
+            const maskChecked = document.getElementById('show-mask-checkbox').checked;
+            
+            updateSelectedIds();
+            displaySelectedImages();
+        }
+        
+        // Add event listeners to the header checkboxes
+        document.getElementById('show-bbox-checkbox').addEventListener('change', function() {
+            toggleSelectAllCheckboxes('bounding-box-checkbox', this.checked);
+        });
+
+        document.getElementById('show-mask-checkbox').addEventListener('change', function() {
+            toggleSelectAllCheckboxes('mask-checkbox', this.checked);
+        });
+
+        // Function to select or deselect all checkboxes in a column
+        function toggleSelectAllCheckboxes(className, isChecked) {
+            const checkboxes = document.querySelectorAll(`#info-table input.${className}`);
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = isChecked;
+            });
+
+            updateSelectedIds();
+            displaySelectedImages();
+        }
+
+        // Function to display images based on selected IDs
+        function displaySelectedImages() {
+            // Handle bounding box images
+            if (selectedIds.boundingBoxIds.length > 0) {
+                fetch(`/image-with-annotations-bbox/?ids=${selectedIds.boundingBoxIds.join(',')}`)
+                .then(response => response.blob())
+                .then(blob => {
+                    const imageBlobUrl = URL.createObjectURL(blob);
+                    document.getElementById('result-image').src = imageBlobUrl;
+                })
+                .catch(error => console.error('Error fetching images with bounding boxes:', error));
+            } else if (selectedIds.maskIds.length > 0) {
+                // Handle mask images
+                fetch(`/image-with-annotations-masks/?ids=${selectedIds.maskIds.join(',')}`)
+                .then(response => response.blob())
+                .then(blob => {
+                    const imageBlobUrl = URL.createObjectURL(blob);
+                    document.getElementById('result-image').src = imageBlobUrl;
+                })
+                .catch(error => console.error('Error fetching images with masks:', error));
+            } else {
+                // Clear the result image if no checkboxes are selected
+                document.getElementById('result-image').src = '';
+            }
+        }
+
+        // Add event listener for checkboxes
+        document.querySelectorAll('#info-table input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                // Update selected IDs and display the corresponding images
+                updateSelectedIds();
+                displaySelectedImages();
+            });
+        });
+    
+        // Load image list on page load
+        window.onload = loadImageList;
+    </script>
+    
+    
+</body>
+</html>

@@ -1,0 +1,25 @@
+[   
+    "id_predictions": 1,
+    "width": 840,
+    "height": 640,
+    "predictions": [
+        {
+            "id":4,
+            "class_name": "person",
+            "bounding_box": {
+                "x": 50,
+                "y": 100,
+                "width": 200,
+                "height": 400
+            },
+            "score": 0.95,
+            "mask": [
+                {"x": 55, "y": 105},
+                {"x": 56, "y": 106},
+                ...
+            ]
+        },
+        ...
+    ]
+                
+]
