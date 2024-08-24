@@ -26,3 +26,12 @@ class DetectionResult(models.Model):
 
     def __str__(self):
         return f'{self.class_name} - {self.id}'
+
+
+class EncodedImage(models.Model):
+    image_name = models.CharField(max_length=255)
+    image_base64 = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.image_name
