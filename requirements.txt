@@ -12,4 +12,4 @@ imgaug==0.4.0
 IPython[all]
 Django==4.2.11
 mysqlclient
-pip
+setuptools
